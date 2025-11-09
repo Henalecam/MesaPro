@@ -59,12 +59,11 @@ export async function POST(req: NextRequest) {
         return error("Item do cardápio inválido", 400);
       }
       for (const ingredient of menuItem.ingredients ?? []) {
-        const stockItem = ingredient.stockItem;
-        if (!stockItem) {
+        if (!ingredient?.stockItem) {
           return error("Item do cardápio inválido", 400);
         }
         const required = ingredient.quantity * item.quantity;
-        if (stockItem.quantity < required) {
+        if (ingredient.stockItem.quantity < required) {
           return error(`Estoque insuficiente para ${menuItem.name}`, 409);
         }
       }
