@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 export function success<T>(data: T, init?: number | ResponseInit) {
-  return NextResponse.json({ success: true, data }, init);
+  const responseInit = typeof init === "number" ? { status: init } : init;
+  return NextResponse.json({ success: true, data }, responseInit);
 }
 
 export function error(message: string, init?: number | ResponseInit) {
