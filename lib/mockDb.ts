@@ -78,6 +78,7 @@ class MockDatabase {
   private tabs: Array<Tab>;
   private orders: Array<Order>;
   private orderItems: Array<OrderItem>;
+  private activeUserId: string;
   private counter = 0;
 
   constructor() {
@@ -152,8 +153,25 @@ class MockDatabase {
         name: "Administrador Mock",
         role: "ADMIN",
         restaurantId: this.restaurantId
+      },
+      {
+        id: "clusr00000000000000000002",
+        email: "garcom@mock.com",
+        password: hashedPassword,
+        name: "Carlos Atendimento",
+        role: "WAITER",
+        restaurantId: this.restaurantId
+      },
+      {
+        id: "clusr00000000000000000003",
+        email: "cozinha@mock.com",
+        password: hashedPassword,
+        name: "Maria Cozinha",
+        role: "KITCHEN",
+        restaurantId: this.restaurantId
       }
     ];
+    this.activeUserId = this.users[0].id;
 
     this.categories = [
       {
@@ -920,7 +938,34 @@ class MockDatabase {
   }
 
   getUserByEmail(email: string) {
-    return this.users.find((user) => user.email === email) ?? null;
+    const user = this.users.find((entry) => entry.email === email);
+    return user ? this.clone(user) : null;
+  }
+
+  getUserById(id: string) {
+    const user = this.users.find((entry) => entry.id === id);
+    return user ? this.clone(user) : null;
+  }
+
+  listUsers() {
+    return this.users.map((user) => this.clone(user));
+  }
+
+  getActiveUser() {
+    const user =
+      this.users.find((entry) => entry.id === this.activeUserId) ??
+      this.users[0] ??
+      null;
+    return user ? this.clone(user) : null;
+  }
+
+  setActiveUser(id: string) {
+    const user = this.users.find((entry) => entry.id === id);
+    if (!user) {
+      return null;
+    }
+    this.activeUserId = user.id;
+    return this.clone(user);
   }
 
   listCategories(restaurantId: string) {

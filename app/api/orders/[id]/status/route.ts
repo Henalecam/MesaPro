@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { orderStatusSchema } from "@/lib/validations/order";
