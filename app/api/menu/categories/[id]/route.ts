@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { categoryUpdateSchema } from "@/lib/validations/category";
+import { mockDb } from "@/lib/mockDb";
 
 type Params = {
   params: {
@@ -18,19 +18,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const category = await prisma.category.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      }
-    });
+    const category = mockDb.getCategoryWithMenuItems(user.restaurantId, params.id);
     if (!category) {
       return error("Categoria não encontrada", 404);
     }
-    const updated = await prisma.category.update({
-      where: { id: category.id },
-      data: parsed.data
-    });
+    const updated = mockDb.updateCategory(user.restaurantId, params.id, parsed.data);
+    if (!updated) {
+      return error("Categoria não encontrada", 404);
+    }
     return success(updated);
   });
 }
@@ -38,24 +33,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   return handle(async () => {
     const user = await requireUser();
-    const category = await prisma.category.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      },
-      include: {
-        menuItems: true
-      }
-    });
+    const category = mockDb.getCategoryWithMenuItems(user.restaurantId, params.id);
     if (!category) {
       return error("Categoria não encontrada", 404);
     }
     if (category.menuItems.length > 0) {
       return error("Categoria contém itens", 409);
     }
-    await prisma.category.delete({
-      where: { id: category.id }
-    });
+    const removed = mockDb.deleteCategory(user.restaurantId, params.id);
+    if (!removed) {
+      return error("Categoria não encontrada", 404);
+    }
     return success({ id: category.id });
   });
 }

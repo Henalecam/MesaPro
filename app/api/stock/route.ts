@@ -1,25 +1,16 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { stockItemCreateSchema } from "@/lib/validations/stockItem";
+import { mockDb } from "@/lib/mockDb";
 
 export async function GET(req: NextRequest) {
   return handle(async () => {
     const user = await requireUser();
     const { searchParams } = new URL(req.url);
     const lowStock = searchParams.get("lowStock") === "true";
-    const items = await prisma.stockItem.findMany({
-      where: {
-        restaurantId: user.restaurantId
-      },
-      orderBy: {
-        name: "asc"
-      }
-    });
-    const filtered = lowStock
-      ? items.filter((item) => item.quantity < item.minQuantity)
-      : items;
+    const items = mockDb.listStockItems(user.restaurantId, lowStock);
+    const filtered = items;
     return success(filtered);
   });
 }
@@ -32,12 +23,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const item = await prisma.stockItem.create({
-      data: {
-        ...parsed.data,
-        restaurantId: user.restaurantId
-      }
-    });
+    const item = mockDb.createStockItem(user.restaurantId, parsed.data);
     return success(item, 201);
   });
 }

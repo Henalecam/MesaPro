@@ -1,74 +1,62 @@
-import { compare } from "bcryptjs";
-import NextAuth from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import { prisma } from "@/lib/prisma";
+import type { Role } from "@prisma/client";
+import { mockDb } from "@/lib/mockDb";
 
-export const authOptions = {
-  providers: [
-    CredentialsProvider({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Senha", type: "password" }
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          return null;
-        }
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
-        });
-        if (!user) {
-          return null;
-        }
-        const valid = await compare(credentials.password, user.password);
-        if (!valid) {
-          return null;
-        }
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          restaurantId: user.restaurantId
-        };
-      }
-    })
-  ],
-  pages: {
-    signIn: "/login"
-  },
-  session: {
-    strategy: "jwt"
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.restaurantId = user.restaurantId;
-        token.name = user.name;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
-        session.user.restaurantId = token.restaurantId as string;
-        session.user.name = token.name as string;
-      }
-      return session;
-    }
-  }
+export type SessionUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  restaurantId: string;
 };
 
-export const { auth, signIn, signOut } = NextAuth(authOptions);
+export type Session = {
+  user: SessionUser;
+};
 
-export async function requireUser() {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("Não autenticado");
+type InternalUser = SessionUser & { password: string };
+
+function sanitizeUser(user: InternalUser): SessionUser {
+  const { password: _password, ...safe } = user;
+  return safe;
+}
+
+function getInternalActiveUser(): InternalUser {
+  const active = mockDb.getActiveUser();
+  if (!active) {
+    throw new Error("Usuário padrão não encontrado");
   }
-  return session.user;
+  return active as InternalUser;
+}
+
+export async function auth(): Promise<Session> {
+  return {
+    user: sanitizeUser(getInternalActiveUser())
+  };
+}
+
+export async function requireUser(): Promise<SessionUser> {
+  return sanitizeUser(getInternalActiveUser());
+}
+
+export function listUsers(): Array<SessionUser> {
+  return mockDb.listUsers().map((user) => sanitizeUser(user as InternalUser));
+}
+
+export function switchUser(userId: string): SessionUser {
+  const updated = mockDb.setActiveUser(userId);
+  if (!updated) {
+    throw new Error("Usuário inválido");
+  }
+  return sanitizeUser(updated as InternalUser);
+}
+
+export async function signIn(userId?: string): Promise<SessionUser> {
+  if (userId) {
+    return switchUser(userId);
+  }
+  return sanitizeUser(getInternalActiveUser());
+}
+
+export async function signOut(): Promise<void> {
+  return;
 }

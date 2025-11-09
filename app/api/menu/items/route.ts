@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import {
   menuItemCreateSchema,
   menuItemFilterSchema
 } from "@/lib/validations/menuItem";
+import { mockDb } from "@/lib/mockDb";
 
 export async function GET(req: NextRequest) {
   return handle(async () => {
@@ -22,35 +22,7 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const where: Record<string, unknown> = {
-      restaurantId: user.restaurantId
-    };
-    if (parsed.data.categoryId) {
-      where.categoryId = parsed.data.categoryId;
-    }
-    if (parsed.data.isAvailable !== undefined) {
-      where.isAvailable = parsed.data.isAvailable;
-    }
-    if (parsed.data.search) {
-      where.name = {
-        contains: parsed.data.search,
-        mode: "insensitive"
-      };
-    }
-    const items = await prisma.menuItem.findMany({
-      where,
-      include: {
-        category: true,
-        ingredients: {
-          include: {
-            stockItem: true
-          }
-        }
-      },
-      orderBy: {
-        name: "asc"
-      }
-    });
+    const items = mockDb.listMenuItems(user.restaurantId, parsed.data);
     return success(items);
   });
 }
@@ -63,72 +35,26 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const category = await prisma.category.findFirst({
-      where: {
-        id: parsed.data.categoryId,
-        restaurantId: user.restaurantId,
-        isActive: true
-      }
-    });
+    const category = mockDb.getCategoryWithMenuItems(user.restaurantId, parsed.data.categoryId);
     if (!category) {
       return error("Categoria inválida", 404);
     }
+    if (!category.isActive) {
+      return error("Categoria inválida", 404);
+    }
     if (parsed.data.ingredients) {
-      const stockItems = await prisma.stockItem.findMany({
-        where: {
-          id: {
-            in: parsed.data.ingredients.map((ingredient) => ingredient.stockItemId)
-          },
-          restaurantId: user.restaurantId,
-          isActive: true
-        }
-      });
-      if (stockItems.length !== parsed.data.ingredients.length) {
+      const stockItems = mockDb.findStockItemsByIds(
+        user.restaurantId,
+        parsed.data.ingredients.map((ingredient) => ingredient.stockItemId)
+      );
+      if (
+        stockItems.length !== parsed.data.ingredients.length ||
+        stockItems.some((item) => !item.isActive)
+      ) {
         return error("Ingrediente inválido", 400);
       }
     }
-    const item = await prisma.$transaction(async (tx) => {
-      const created = await tx.menuItem.create({
-        data: {
-          name: parsed.data.name,
-          description: parsed.data.description,
-          price: parsed.data.price,
-          image: parsed.data.image,
-          isAvailable: parsed.data.isAvailable,
-          preparationTime: parsed.data.preparationTime,
-          categoryId: category.id,
-          restaurantId: user.restaurantId
-        },
-        include: {
-          category: true,
-          ingredients: true
-        }
-      });
-      if (parsed.data.ingredients) {
-        await Promise.all(
-          parsed.data.ingredients.map((ingredient) =>
-            tx.menuItemIngredient.create({
-              data: {
-                menuItemId: created.id,
-                stockItemId: ingredient.stockItemId,
-                quantity: ingredient.quantity
-              }
-            })
-          )
-        );
-      }
-      return tx.menuItem.findUnique({
-        where: { id: created.id },
-        include: {
-          category: true,
-          ingredients: {
-            include: {
-              stockItem: true
-            }
-          }
-        }
-      });
-    });
+    const item = mockDb.createMenuItem(user.restaurantId, parsed.data);
     return success(item, 201);
   });
 }
