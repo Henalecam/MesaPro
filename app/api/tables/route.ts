@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { tableCreateSchema, tableFilterSchema } from "@/lib/validations/table";
+import { mockDb } from "@/lib/mockDb";
 
 export async function GET(req: NextRequest) {
   return handle(async () => {
@@ -15,25 +15,7 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const tables = await prisma.table.findMany({
-      where: {
-        restaurantId: user.restaurantId,
-        status: parsed.data.status
-      },
-      include: {
-        tabs: {
-          where: {
-            status: "OPEN"
-          },
-          orderBy: {
-            openedAt: "desc"
-          }
-        }
-      },
-      orderBy: {
-        number: "asc"
-      }
-    });
+    const tables = mockDb.listTables(user.restaurantId, parsed.data.status);
     return success(tables);
   });
 }
@@ -46,21 +28,13 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const existing = await prisma.table.findFirst({
-      where: {
-        restaurantId: user.restaurantId,
-        number: parsed.data.number
-      }
-    });
+    const existing = mockDb
+      .listTables(user.restaurantId)
+      .find((table) => table.number === parsed.data.number);
     if (existing) {
       return error("Mesa já cadastrada", 409);
     }
-    const table = await prisma.table.create({
-      data: {
-        ...parsed.data,
-        restaurantId: user.restaurantId
-      }
-    });
+    const table = mockDb.createTable(user.restaurantId, parsed.data);
     return success(table, 201);
   });
 }

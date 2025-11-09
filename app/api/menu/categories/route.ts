@@ -1,27 +1,13 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { categoryCreateSchema } from "@/lib/validations/category";
+import { mockDb } from "@/lib/mockDb";
 
 export async function GET() {
   return handle(async () => {
     const user = await requireUser();
-    const categories = await prisma.category.findMany({
-      where: {
-        restaurantId: user.restaurantId
-      },
-      include: {
-        menuItems: {
-          select: {
-            id: true
-          }
-        }
-      },
-      orderBy: {
-        order: "asc"
-      }
-    });
+    const categories = mockDb.listCategories(user.restaurantId);
     return success(categories);
   });
 }
@@ -34,12 +20,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const category = await prisma.category.create({
-      data: {
-        ...parsed.data,
-        restaurantId: user.restaurantId
-      }
-    });
+    const category = mockDb.createCategory(user.restaurantId, parsed.data);
     return success(category, 201);
   });
 }

@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { menuItemUpdateSchema } from "@/lib/validations/menuItem";
+import { mockDb } from "@/lib/mockDb";
 
 type Params = {
   params: {
@@ -13,20 +13,7 @@ type Params = {
 export async function GET(_req: NextRequest, { params }: Params) {
   return handle(async () => {
     const user = await requireUser();
-    const item = await prisma.menuItem.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      },
-      include: {
-        category: true,
-        ingredients: {
-          include: {
-            stockItem: true
-          }
-        }
-      }
-    });
+    const item = mockDb.getMenuItem(user.restaurantId, params.id);
     if (!item) {
       return error("Item não encontrado", 404);
     }
@@ -42,81 +29,32 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const item = await prisma.menuItem.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      }
-    });
-    if (!item) {
+    const existing = mockDb.getMenuItem(user.restaurantId, params.id);
+    if (!existing) {
       return error("Item não encontrado", 404);
     }
     if (parsed.data.categoryId) {
-      const category = await prisma.category.findFirst({
-        where: {
-          id: parsed.data.categoryId,
-          restaurantId: user.restaurantId
-        }
-      });
-      if (!category) {
+      const category = mockDb.getCategoryWithMenuItems(user.restaurantId, parsed.data.categoryId);
+      if (!category || !category.isActive) {
         return error("Categoria inválida", 404);
       }
     }
     if (parsed.data.ingredients) {
-      const stockItems = await prisma.stockItem.findMany({
-        where: {
-          id: {
-            in: parsed.data.ingredients.map((ingredient) => ingredient.stockItemId)
-          },
-          restaurantId: user.restaurantId
-        }
-      });
-      if (stockItems.length !== parsed.data.ingredients.length) {
+      const stockItems = mockDb.findStockItemsByIds(
+        user.restaurantId,
+        parsed.data.ingredients.map((ingredient) => ingredient.stockItemId)
+      );
+      if (
+        stockItems.length !== parsed.data.ingredients.length ||
+        stockItems.some((item) => !item.isActive)
+      ) {
         return error("Ingrediente inválido", 400);
       }
     }
-    const updated = await prisma.$transaction(async (tx) => {
-      const baseUpdate = await tx.menuItem.update({
-        where: { id: item.id },
-        data: {
-          name: parsed.data.name ?? item.name,
-          description: parsed.data.description ?? item.description,
-          price: parsed.data.price ?? item.price,
-          image: parsed.data.image ?? item.image,
-          isAvailable:
-            parsed.data.isAvailable !== undefined ? parsed.data.isAvailable : item.isAvailable,
-          preparationTime: parsed.data.preparationTime ?? item.preparationTime,
-          categoryId: parsed.data.categoryId ?? item.categoryId
-        }
-      });
-      if (parsed.data.ingredients) {
-        await tx.menuItemIngredient.deleteMany({
-          where: { menuItemId: baseUpdate.id }
-        });
-        await Promise.all(
-          parsed.data.ingredients.map((ingredient) =>
-            tx.menuItemIngredient.create({
-              data: {
-                menuItemId: baseUpdate.id,
-                stockItemId: ingredient.stockItemId,
-                quantity: ingredient.quantity
-              }
-            })
-          )
-        );
-      }
-      return tx.menuItem.findUnique({
-        where: { id: baseUpdate.id },
-        include: {
-          category: true,
-          ingredients: {
-            include: {
-              stockItem: true
-            }
-          }
-        }
-      });
-    });
+    const updated = mockDb.updateMenuItem(user.restaurantId, params.id, parsed.data);
+    if (!updated) {
+      return error("Item não encontrado", 404);
+    }
     return success(updated);
   });
 }
@@ -124,23 +62,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   return handle(async () => {
     const user = await requireUser();
-    const item = await prisma.menuItem.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      }
-    });
-    if (!item) {
+    const existing = mockDb.getMenuItem(user.restaurantId, params.id);
+    if (!existing) {
       return error("Item não encontrado", 404);
     }
-    await prisma.$transaction(async (tx) => {
-      await tx.menuItemIngredient.deleteMany({
-        where: { menuItemId: item.id }
-      });
-      await tx.menuItem.delete({
-        where: { id: item.id }
-      });
-    });
-    return success({ id: item.id });
+    const removed = mockDb.deleteMenuItem(user.restaurantId, params.id);
+    if (!removed) {
+      return error("Item não encontrado", 404);
+    }
+    return success({ id: params.id });
   });
 }

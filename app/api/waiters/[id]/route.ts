@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
 import { waiterUpdateSchema } from "@/lib/validations/waiter";
+import { mockDb } from "@/lib/mockDb";
 
 type Params = {
   params: {
@@ -13,12 +13,7 @@ type Params = {
 export async function PATCH(req: NextRequest, { params }: Params) {
   return handle(async () => {
     const user = await requireUser();
-    const waiter = await prisma.waiter.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      }
-    });
+    const waiter = mockDb.getWaiter(user.restaurantId, params.id);
     if (!waiter) {
       return error("Garçom não encontrado", 404);
     }
@@ -27,10 +22,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const updated = await prisma.waiter.update({
-      where: { id: waiter.id },
-      data: parsed.data
-    });
+    const updated = mockDb.updateWaiter(user.restaurantId, params.id, parsed.data);
+    if (!updated) {
+      return error("Garçom não encontrado", 404);
+    }
     return success(updated);
   });
 }
@@ -38,21 +33,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   return handle(async () => {
     const user = await requireUser();
-    const waiter = await prisma.waiter.findFirst({
-      where: {
-        id: params.id,
-        restaurantId: user.restaurantId
-      }
-    });
+    const waiter = mockDb.getWaiter(user.restaurantId, params.id);
     if (!waiter) {
       return error("Garçom não encontrado", 404);
     }
-    const updated = await prisma.waiter.update({
-      where: { id: waiter.id },
-      data: {
-        isActive: false
-      }
-    });
+    const updated = mockDb.deactivateWaiter(user.restaurantId, params.id);
+    if (!updated) {
+      return error("Garçom não encontrado", 404);
+    }
     return success(updated);
   });
 }

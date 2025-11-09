@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { handle, success, error } from "@/lib/http";
-import { generateSequentialCode } from "@/lib/utils";
 import { tabCreateSchema, tabFilterSchema } from "@/lib/validations/tab";
+import { mockDb } from "@/lib/mockDb";
 
 export async function GET(req: NextRequest) {
   return handle(async () => {
@@ -19,42 +18,14 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const where: Record<string, unknown> = {
-      restaurantId: user.restaurantId
+    const filter = {
+      status: parsed.data.status,
+      waiterId: parsed.data.waiterId,
+      startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
+      endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
+      search: parsed.data.search ?? undefined
     };
-    if (parsed.data.status) {
-      where.status = parsed.data.status;
-    }
-    if (parsed.data.waiterId) {
-      where.waiterId = parsed.data.waiterId;
-    }
-    if (parsed.data.search) {
-      where.code = {
-        contains: parsed.data.search,
-        mode: "insensitive"
-      };
-    }
-    if (parsed.data.startDate || parsed.data.endDate) {
-      where.openedAt = {
-        gte: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
-        lte: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined
-      };
-    }
-    const tabs = await prisma.tab.findMany({
-      where,
-      include: {
-        table: true,
-        waiter: true,
-        orders: {
-          include: {
-            items: true
-          }
-        }
-      },
-      orderBy: {
-        openedAt: "desc"
-      }
-    });
+    const tabs = mockDb.listTabs(user.restaurantId, filter);
     return success(tabs);
   });
 }
@@ -67,58 +38,18 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return error(parsed.error.errors[0].message, 400);
     }
-    const table = await prisma.table.findFirst({
-      where: {
-        id: parsed.data.tableId,
-        restaurantId: user.restaurantId
-      }
-    });
+    const table = mockDb.getTable(user.restaurantId, parsed.data.tableId);
     if (!table) {
       return error("Mesa não encontrada", 404);
     }
     if (table.status !== "AVAILABLE") {
       return error("Mesa indisponível", 409);
     }
-    const waiter = await prisma.waiter.findFirst({
-      where: {
-        id: parsed.data.waiterId,
-        restaurantId: user.restaurantId,
-        isActive: true
-      }
-    });
-    if (!waiter) {
+    const waiter = mockDb.getWaiter(user.restaurantId, parsed.data.waiterId);
+    if (!waiter || !waiter.isActive) {
       return error("Garçom inválido", 404);
     }
-    const lastTab = await prisma.tab.findFirst({
-      where: {
-        restaurantId: user.restaurantId
-      },
-      orderBy: {
-        createdAt: "desc"
-      }
-    });
-    const code = generateSequentialCode(lastTab?.code ?? null, "C");
-    const result = await prisma.$transaction(async (tx) => {
-      const createdTab = await tx.tab.create({
-        data: {
-          code,
-          tableId: table.id,
-          waiterId: waiter.id,
-          restaurantId: user.restaurantId
-        },
-        include: {
-          table: true,
-          waiter: true
-        }
-      });
-      await tx.table.update({
-        where: { id: table.id },
-        data: {
-          status: "OCCUPIED"
-        }
-      });
-      return createdTab;
-    });
-    return success(result, 201);
+    const created = mockDb.createTab(user.restaurantId, parsed.data.tableId, parsed.data.waiterId);
+    return success(created, 201);
   });
 }
