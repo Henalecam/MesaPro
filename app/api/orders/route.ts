@@ -58,12 +58,16 @@ export async function POST(req: NextRequest) {
       if (!menuItem || !menuItem.isAvailable) {
         return error("Item do cardápio inválido", 400);
       }
-      for (const ingredient of menuItem.ingredients ?? []) {
-        if (!ingredient?.stockItem) {
+      for (const ingredientMaybe of menuItem.ingredients ?? []) {
+        if (!ingredientMaybe) {
           return error("Item do cardápio inválido", 400);
         }
-        const required = ingredient.quantity * item.quantity;
-        if (ingredient.stockItem.quantity < required) {
+        const stockItem = ingredientMaybe.stockItem;
+        if (!stockItem) {
+          return error("Item do cardápio inválido", 400);
+        }
+        const required = ingredientMaybe.quantity * item.quantity;
+        if (stockItem.quantity < required) {
           return error(`Estoque insuficiente para ${menuItem.name}`, 409);
         }
       }
